@@ -97,6 +97,8 @@ def airquality(statecode, county, PMcodes = False):
             output = json.loads(response.text)
             outputheader = output['Header']
             PMcodeddf = pd.DataFrame.from_dict(output['Data'], orient='columns')
+            print("PM section")
+            print(PMcodeddf)
             return PMcodeddf
     
         else:
@@ -111,6 +113,10 @@ def airquality(statecode, county, PMcodes = False):
             return outputdata
         else:
             print(f"Error: {response.status_code}")
+
+def csvsave(df, filename):
+    filepath = f"/Users/griffinberonio/Documents/AAE 724/AAE-724-Repo/{filename}.csv"
+    df.to_csv(filepath, index=False)
 
 ###################################################################################
 
@@ -137,10 +143,10 @@ if __name__ == '__main__':
     cookcode = '031'
     extra = 'none'
 
-    airdf = print(airquality(illinoiscode, cookcode))
-    siteaddresses = print(airdf['site_address'].unique())
-    
-
+    airdf = airquality(illinoiscode, cookcode, PMcodes=True)
+    airdf
+    # siteaddresses = print(airdf['site_address'].unique())
+    # siteaddresses
 
     # df = totaltemps(wi_county_fips, "tmax", "tmaxdata")
     # print(df.head(10))
