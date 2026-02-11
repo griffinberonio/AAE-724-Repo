@@ -6,6 +6,7 @@ import json
 from datetime import datetime
 from io import StringIO
 import csv
+import time
 
 
 
@@ -82,7 +83,7 @@ def totaltemps(fips, param, filename):
 
 ########### AIR QUALITY API REQUEST #############
 
-def airquality(statecode, county, PMcodes = False):
+def airquality(statecode, county, year, PMcodes = False):
     # https://aqs.epa.gov/data/api/list/countiesByState?email=test@aqs.api&key=test&state=37
     email = 'griffinberonio@gmail.com'
     key = 'bluefrog75'
@@ -91,6 +92,8 @@ def airquality(statecode, county, PMcodes = False):
     url = f"https://aqs.epa.gov/data/api/list/sitesByCounty?email={email}&key={key}&state={statecode}&county={county}"
     testurl = f"https://aqs.epa.gov/data/api/dailyData/byCounty?email={email}&key={key}&param=88101&bdate=20170618&edate=20170618&state={statecode}&county={county}"
     #Above test url finds FRM PM 2.5 daily summary data from between 06/01/2017 and 06/18/2017
+    finalurl = f"https://aqs.epa.gov/data/api/dailyData/byCounty?email={email}&key={key}&param=88101&bdate={year}0101&edate={year}1231&state={statecode}&county={county}"
+
     if PMcodes == True:
         response = requests.get(PMurl)
         if response.status_code == 200:
@@ -105,7 +108,11 @@ def airquality(statecode, county, PMcodes = False):
             print(f"Error: {response.status_code}")
             
     else:
-        response = requests.get(testurl)
+        start = time.time()
+        response = requests.get(finalurl)
+        fin = time.time()
+        print(f"Air quality API request took {fin - start} seconds")
+
         if response.status_code == 200:
             output = json.loads(response.text)
             outputheader = output['Header']
@@ -114,9 +121,29 @@ def airquality(statecode, county, PMcodes = False):
         else:
             print(f"Error: {response.status_code}")
 
+#Saves df to CSV: 
 def csvsave(df, filename):
-    filepath = f"/Users/griffinberonio/Documents/AAE 724/AAE-724-Repo/{filename}.csv"
+    filepath = f'/Users/griffinberonio/Documents/AAE 724/Datasets/{filename}.csv'
     df.to_csv(filepath, index=False)
+    print('CSV saved')
+
+
+#API calls for all the years and concats dfs: 
+def masteraqsdf(statecode, county, PMcodes = False):
+    years = ['2015', '2016', '2017', '2018', '2019', '2020', '2021', '2022', '2023', '2024', '2025']
+    # testyears = ['2015', '2016']
+    totaldf = None
+    for year in years:
+        airdf = airquality(statecode, county, year, PMcodes=False)
+        if totaldf is None:
+            totaldf = airdf
+        else:
+            totaldf = pd.concat([totaldf, airdf], ignore_index=True)
+    csvsave(totaldf, f"master_aqs_df_{statecode}_{county}")
+    return totaldf
+
+
+
 
 ###################################################################################
 
@@ -143,11 +170,15 @@ if __name__ == '__main__':
     cookcode = '031'
     extra = 'none'
 
-    airdf = airquality(illinoiscode, cookcode, PMcodes=True)
-    airdf
+    # airdf = airquality(illinoiscode, cookcode, 2015, PMcodes=False)
+
     # siteaddresses = print(airdf['site_address'].unique())
     # siteaddresses
+#Converting to csv:
+    # csvsave(airdf,'testairqualitydata2')
 
+    masteraqsdf(illinoiscode, cookcode, PMcodes=False)
+#For climate variables: 
     # df = totaltemps(wi_county_fips, "tmax", "tmaxdata")
     # print(df.head(10))
 
