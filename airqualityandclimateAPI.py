@@ -7,6 +7,7 @@ from datetime import datetime
 from io import StringIO
 import csv
 import time
+import os
 
 
 
@@ -124,7 +125,14 @@ def airquality(statecode, county, year, PMcodes = False):
 #Saves df to CSV: 
 def csvsave(df, filename):
     filepath = f'/Users/griffinberonio/Documents/AAE 724/Datasets/{filename}.csv'
-    df.to_csv(filepath, index=False)
+    if os.path.exists(filepath):
+        print('Path Exists Already. Creating Extra File in Directory')
+        filename2 = f"{filename}_update"
+        filepath2 = f'/Users/griffinberonio/Documents/AAE 724/Datasets/{filename2}.csv'
+        df.to_csv(filepath2, index=False)
+        
+    else:
+        df.to_csv(filepath, index=False)
     print('CSV saved')
 
 
@@ -142,9 +150,86 @@ def masteraqsdf(statecode, county, PMcodes = False):
     csvsave(totaldf, f"master_aqs_df_{statecode}_{county}")
     return totaldf
 
+######################### EMISSIONS DATA AND GENERATOR DISPATCH ############################: 
+def emissionsdata(file,year):
+    emdf = pd.read_csv(file)
+    print(emdf.columns)
+    return emdf.head()
+
+########################## RENEWABLE GENERATORS IN CHICAGO #################################:
+
+def renewables(file):
+    renewdf = pd.read_csv(file, encoding='latin-1')
+    cookrenewables = renewdf[(renewdf['State'] == 'IL') & (renewdf['County'] == 'Cook')]
+    cookrenewables['Date Online'] = pd.to_datetime(cookrenewables['Date Online'])
+    cookrenewables['YEAR'] = cookrenewables['Date Online'].dt.year
+    cookrenewables['MONTH'] = cookrenewables['Date Online'].dt.month
+    #Filtering by study period: 
+    cookfiltered = cookrenewables[(cookrenewables['YEAR'] >= 2015) & (cookrenewables['YEAR'] < 2026)]
+    return cookfiltered
 
 
+##################################### ENERGY DEMAND ########################################:
 
+
+def energydemand(metadata = False):
+    lastdate = []
+    firstdate = '2019-01-01'
+    email = "griffinberonio@gmail.com"
+    apikey = "Mf5tbUIEj67mMlX2NhmUzocXdB0AoszlVHXXBF7P"
+    metaurl = f"https://api.eia.gov/v2/electricity/rto/daily-region-data?api_key={apikey}"
+    # energyurl = f"https://api.eia.gov/v2/electricity/rto/daily-region-data/data/?api_key={apikey}&frequency=daily&data[0]=value&start=2021-01-01&end=2021-12-31&sort[0][column]=period&sort[0][direction]=desc&offset=0&length=12000"
+    
+    steps = [1,2,3]
+    currentdf = None
+    if metadata == False:
+        for i in steps:
+            print(f"step: {i}")
+            energyurl = None
+            if len(lastdate) == 0:
+                start = firstdate 
+                energyurl = f"https://api.eia.gov/v2/electricity/rto/daily-region-data/data?api_key={apikey}&frequency=daily&data[0]=value&facets[respondent][]=PJM&facets[timezone][]=Central&start={start}&sort[0][column]=period&sort[0][direction]=asc&offset=0"
+            else:
+                start = lastdate[-1]
+                energyurl = f"https://api.eia.gov/v2/electricity/rto/daily-region-data/data?api_key={apikey}&frequency=daily&data[0]=value&facets[respondent][]=PJM&facets[timezone][]=Central&start={start}&sort[0][column]=period&sort[0][direction]=asc&offset=0"
+
+            response = requests.get(energyurl)
+            if response.status_code == 200:
+                output = json.loads(response.text)
+                # print(output['response'])
+                df = pd.DataFrame(output['response']['data'])
+
+                maxdate = df['period'].max()
+                lastdate.append(maxdate)
+
+                df['DATE'] = pd.to_datetime(df['period'])
+                df['YEAR'] = df['DATE'].dt.year
+
+                if currentdf is None:
+                    currentdf = df
+                else:
+                    currentdf = pd.concat([currentdf, df],ignore_index=True)
+            
+            else:
+                print(f'error. Response code: {response}')
+        
+        # filtering out 2026 data:
+        filtereddf = currentdf[currentdf['YEAR']<2026]
+        return filtereddf
+            
+    else:
+        response = requests.get(metaurl)
+        if response.status_code==200:
+            output = json.loads(response.text)
+            print('in meta')
+            return output['response']
+        else:
+            print(f'error. Response code: {response}')
+
+
+     
+            
+###################################################################################
 ###################################################################################
 
 
@@ -177,10 +262,24 @@ if __name__ == '__main__':
 #Converting to csv:
     # csvsave(airdf,'testairqualitydata2')
 
-    masteraqsdf(illinoiscode, cookcode, PMcodes=False)
+    # masteraqsdf(illinoiscode, cookcode, PMcodes=False)
 #For climate variables: 
     # df = totaltemps(wi_county_fips, "tmax", "tmaxdata")
     # print(df.head(10))
+
+#For Emissions Data:
+    # emissionfile = '/Users/griffinberonio/Documents/AAE 724/Datasets/IL_Daily_Emissions.csv'
+    # print(emissionsdata(emissionfile,None))
+
+# For Mid Atlantic (Part of PJM includes Chi) Energy Demand Data: 
+    energydf = energydemand(metadata=False)
+    # print(energydf['respondent'].unique())
+    # print(energydf)
+    # print(energydf['DATE'].max())
+
+    #Saving the energydf:
+    energydemandfilename = "Energy_Demand_CHIPJM"
+    csvsave(energydf,energydemandfilename)
 
 
 
