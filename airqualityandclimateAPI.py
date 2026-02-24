@@ -130,7 +130,7 @@ def csvsave(df, filename):
         filename2 = f"{filename}_update"
         filepath2 = f'/Users/griffinberonio/Documents/AAE 724/Datasets/{filename2}.csv'
         df.to_csv(filepath2, index=False)
-        
+
     else:
         df.to_csv(filepath, index=False)
     print('CSV saved')
@@ -280,7 +280,6 @@ if __name__ == '__main__':
     #Saving the energydf:
     energydemandfilename = "Energy_Demand_CHIPJM"
     csvsave(energydf,energydemandfilename)
-
 
 
 
