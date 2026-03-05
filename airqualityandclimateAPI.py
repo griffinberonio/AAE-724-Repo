@@ -226,9 +226,52 @@ def energydemand(metadata = False):
         else:
             print(f'error. Response code: {response}')
 
+################################ Traffic API Request ####################################
+trafficurl = f'https://data.cityofchicago.org/api/odata/v4/kf7e-cur8'
+def trafficdata():
+    traffresponse = requests.get(trafficurl)
+    if traffresponse.status_code == 200:
+        # print('worked')
+        traffraw = json.loads(traffresponse.text)
+        traffdf = pd.DataFrame(traffraw['value'])
+        print(traffdf)
 
-     
-            
+    else:
+        print(f'Error: {traffresponse.status_code}')
+
+
+
+def merge_traffic_data():
+    
+    twentyeighteen = '/Users/griffinberonio/Documents/AAE 724/Datasets/Chicago_Traffic_Tracker_-_Historical_Congestion_Estimates_by_Region_-_2013-2018_20260304.csv'
+    twentytwentyone = '/Users/griffinberonio/Documents/AAE 724/Datasets/Chicago_Traffic_Tracker_-_Historical_Congestion_Estimates_by_Region_-_2018-Current_20260304.csv'
+    twentytwentyfive = '/Users/griffinberonio/Documents/AAE 724/Datasets/Chicago_Traffic_Tracker_-_Historical_Congestion_Estimates_by_Region_-_2018-Current_20260304-2.csv'
+    
+    firstdf = pd.read_csv(twentyeighteen)
+    firstcols = firstdf.columns
+    firstdf = firstdf.rename(columns={'BUS COUNT':'BUS_COUNT','NUMBER OF READS                      ':'NUM_READS'})
+    # firstdf = firstdf.rename(columns={'NUMBER OF READS':'NUM_READS'})
+    seconddf = pd.read_csv(twentytwentyone)
+    secondcols = seconddf.columns
+    thirddf = pd.read_csv(twentytwentyfive)
+    totaldf = pd.concat([firstdf,seconddf,thirddf])
+    totaldf['TIME'] = pd.to_datetime(totaldf['TIME'])
+    totaldf['DATE'] = totaldf['TIME'].dt.date
+    totaldf['DATE'] = pd.to_datetime(totaldf['DATE'])
+    totaldf['YEAR'] = totaldf['DATE'].dt.year
+
+    # Grouping by day:
+
+    traffic_daily = totaldf.drop(columns=['RECORD_ID','DAY_OF_WEEK','TIME','HOUR','MONTH','WEST','EAST','SOUTH','NORTH','YEAR'])
+    traffic_daily = (
+        traffic_daily.groupby(['DATE','REGION_ID','REGION','DESCRIPTION','NW_LOCATION','SE_LOCATION'], as_index=False, dropna=False)
+        .mean(numeric_only=True)
+    )
+    traffic_daily = traffic_daily.sort_values(by='DATE',ascending=True)
+
+
+    return traffic_daily
+
 ###################################################################################
 ###################################################################################
 
@@ -272,14 +315,21 @@ if __name__ == '__main__':
     # print(emissionsdata(emissionfile,None))
 
 # For Mid Atlantic (Part of PJM includes Chi) Energy Demand Data: 
-    energydf = energydemand(metadata=False)
+    # energydf = energydemand(metadata=False)
     # print(energydf['respondent'].unique())
     # print(energydf)
     # print(energydf['DATE'].max())
 
     #Saving the energydf:
-    energydemandfilename = "Energy_Demand_CHIPJM"
-    csvsave(energydf,energydemandfilename)
+    # energydemandfilename = "Energy_Demand_CHIPJM"
+    # csvsave(energydf,energydemandfilename)
+
+# For Traffic Data:
+    # print(trafficdata())
+    trafficdaily = merge_traffic_data()
+
+    # Saving Daily Aggregates:
+    # csvsave(trafficdaily, "DailyTrafficData_Chicago")
 
 
 
