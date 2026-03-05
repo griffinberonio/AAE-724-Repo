@@ -19,7 +19,7 @@ airqualitydatapath = f'/Users/griffinberonio/Documents/AAE 724/Datasets/master_a
 airqualitydata = pd.read_csv(airqualitydatapath)
 
 #Renewable Energy Data: 
-renewablespath = '/Users/griffinberonio/Documents/AAE 724/Datasets/RenewableGeneratorsRegisteredinGATS_20260203_110659.csv'
+renewablespath = '/Users/griffinberonio/Documents/AAE 724/Datasets/CookCountyRenewablesData.csv'
 renewablesdata = pd.read_csv(renewablespath, encoding='latin-1')
 
 #Daily Emissions Data:
@@ -31,7 +31,9 @@ energydemandpath = f'/Users/griffinberonio/Documents/AAE 724/Datasets/Energy_Dem
 energydemanddata = pd.read_csv(energydemandpath)
 
 #Traffic Data:
-trafficdatapath = 
+trafficdatapath = '/Users/griffinberonio/Documents/AAE 724/Datasets/DailyTrafficData_Chicago.csv'
+
+
 
 
 
