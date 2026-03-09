@@ -263,12 +263,19 @@ def merge_traffic_data():
     # Grouping by day:
 
     traffic_daily = totaldf.drop(columns=['RECORD_ID','DAY_OF_WEEK','TIME','HOUR','MONTH','WEST','EAST','SOUTH','NORTH','YEAR'])
+
+    traffic_daily['NUM_READS'] = (
+        traffic_daily['NUM_READS']
+        .str.replace(",", "", regex=False)
+        .astype(float)
+    )
+
     traffic_daily = (
         traffic_daily.groupby(['DATE','REGION_ID','REGION','DESCRIPTION','NW_LOCATION','SE_LOCATION'], as_index=False, dropna=False)
         .mean(numeric_only=True)
     )
     traffic_daily = traffic_daily.sort_values(by='DATE',ascending=True)
-
+    print(traffic_daily.columns)
 
     return traffic_daily
 
@@ -327,9 +334,9 @@ if __name__ == '__main__':
 # For Traffic Data:
     # print(trafficdata())
     trafficdaily = merge_traffic_data()
-
+    # trafficdaily
     # Saving Daily Aggregates:
-    # csvsave(trafficdaily, "DailyTrafficData_Chicago")
+    csvsave(trafficdaily, "DailyTrafficData_Chicago")
 
 
 
