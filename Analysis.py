@@ -73,10 +73,10 @@ def cleaning_total_data(df,variables):
 
 # come back to this:
 class totaldataclass:
-    data = totaldf
     def __init__(self, matrixname, columns=[]):
+        data = totaldf
         self.name = matrixname
-        self.matrix = data[data[columns]]
+        self.matrix = data[columns]
 
 #Model 1:
 # Model1: Regressing PM 2.5 on a matrix of climate variables alone:
@@ -103,7 +103,7 @@ def model_1(data, x, y, fe):
     # )
     df_with_dummies = pd.get_dummies(
         df,
-        columns=['CLIMATE_STATION_NAME'],
+        columns=['CLIMATE_STATION_NAME','YEAR'],
         drop_first=True
         )
     
@@ -166,6 +166,8 @@ def model_1_panel(df, x, y, fe):
     return results
 
 
+def model_2(data, fe):
+
 
 
 
@@ -188,4 +190,6 @@ if __name__ == '__main__':
     fe = ['DATE','CLIMATE_STATION_NAME']
 
     # model_1(totaldf, xclimate, y, fe)
-    model_1_panel(totaldf, xclimate,y,fe)
+    # model_1_panel(totaldf, xclimate,y,fe)
+
+   
