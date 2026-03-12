@@ -50,9 +50,13 @@ totaldf = pd.read_csv(totaldatapath)
 
 def totaldata():
 
+    
     totaldatapath = '/Users/griffinberonio/Documents/AAE 724/Datasets/totaldata.csv'
     totaldf = pd.read_csv(totaldatapath)
-
+    totaldf['DATE'] = pd.to_datetime(totaldf['DATE'])
+    totaldf['DailyPrecipitation'] = totaldf['DailyPrecipitation'].replace('T',0)
+    totaldf['DailyPrecipitation'] = totaldf['DailyPrecipitation'].astype(float)
+    totaldf['YEAR'] = totaldf['DATE'].dt.year
 
     return totaldf
 
@@ -136,6 +140,7 @@ def model_1(data, x, y, fe):
 
 def model_1_panel(df, x, y, fe):
     df['DATE'] = pd.to_datetime(df['DATE'])
+    # df['YEAR'] = df['DATE'].dt.year
     totalcols = x + y + fe
     df = df[totalcols]
 
@@ -147,7 +152,7 @@ def model_1_panel(df, x, y, fe):
     model_df = df.dropna()
 
     # Set MultiIndex
-    df_panel = df.set_index(['CLIMATE_STATION_NAME', 'DATE'])
+    df_panel = df.set_index(['CLIMATE_STATION_NAME', 'YEAR'])
 
     # Define X and Y
     Y = df_panel[y[0]]  # assuming y = ['arithmetic_mean']
@@ -163,22 +168,114 @@ def model_1_panel(df, x, y, fe):
 
     results = model.fit(cov_type='clustered', cluster_entity=True)
     print(results)
+
     return results
 
 
-def model_2(data, fe):
+def model_2_aqi(data, x, y, fe):
+
+    df = data
+    df['DATE'] = pd.to_datetime(df['DATE'])
+    df['YEAR'] = df['DATE'].dt.year
+    totalcols = x + y + fe
+    df = df[totalcols]
+
+    # Convert all predictors and Y to numeric
+    for col in x + y:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+
+    # Drop rows with any missing values
+    model_df = df.dropna()
+    print(model_df.head())
+    # Set MultiIndex
+    df_panel = model_df.set_index(fe)
+
+    # Define X and Y
+    Y = df_panel[y[0]]  # assuming y = ['aqi']
+    X = df_panel[x]
+
+    # Fit the model
+    model = PanelOLS(
+        Y,
+        X,
+        entity_effects=True,
+        time_effects=True
+    )
+
+    results = model.fit(cov_type='clustered', cluster_entity=True)
+    print(results)
+
+    return results
 
 
+# Model 3: Regressing Energy demand on climate variables: 
+# Rexamine which variables are included, add a few more 
+# Include Seasonal column (4 categories, broken up by season based on month)
+def model_3_energy_climate(data, x, y, fe):
+    df = data
+    df['DATE'] = pd.to_datetime(df['DATE'])
+    df['MONTH'] = df['DATE'].dt.month
+    df['YEAR'] = df['DATE'].dt.year
+    # df['MONTH'] = df['MONTH'].astype('category')
+    # seasons = {
+    #     '12':'1','1':'1','2':'1',  #winter
+    #      '3':'2','4':'2','5':'1',  #Spring
+    #      '6':'3','7':'3','8':'3',  #Summer
+    #      '9':'4','10':'4','11':'4' #Fall
+    # }
+    # df['month'] = df['MONTH'].astype(str)
+    # df['SEASON'] = df['month'].map(seasons)
+    # df['SEASON'] = df['SEASON'].astype('category')
+    # df = df.drop(columns='month')
+    # x.append('SEASON')
+
+    totalcols = x+y+fe
+
+    for col in x + y:
+        df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    df = df[totalcols]
+    model_df = df.dropna()
+
+    # print(model_df.head())
+
+    df_panel = model_df.set_index(fe)
+
+    Y = df_panel[y[0]] 
+    X = df_panel[x]
+
+    # Fit the model
+    model = PanelOLS(
+        Y,
+        X,
+        entity_effects=True,
+        time_effects=True
+    )
+
+    results = model.fit(cov_type='clustered', cluster_entity=True)
+    print(results)
+
+    return results
 
 
+    
 
+
+    
+
+# Model 4: Fossil fuel generation output (MWh) based on above metrics ^
+# Model 5: Regressing Pm2.5/ aqi on renewables, controlling. for climate metrics 
+#Model 6-7: adding all the things together. 
 
 ########################################################################################################
 if __name__ == '__main__':
+
+    total = totaldata()
+
     dependent_vars = ['arithmetic_mean','first_max_value']
     # cleaning_total_data(totaldf,dependent_vars)
 
-    # Model 1:
+    # Variables:
     xclimate = ['DailyAverageDryBulbTemperature', 'DailyAverageWindSpeed','DailyMaximumDryBulbTemperature',
        'DailyMinimumDryBulbTemperature', 'DailyPeakWindSpeed',
        'DailyPrecipitation','DailySustainedWindSpeed', 'DailySustainedWindDirection_sin', 'DailySustainedWindDirection_cos',
@@ -186,10 +283,52 @@ if __name__ == '__main__':
        'DailyAverageRelativeHumidity',]
 
     y = ['arithmetic_mean']
+    yaqi = ['aqi']
 
-    fe = ['DATE','CLIMATE_STATION_NAME']
+    fe = ['CLIMATE_STATION_NAME','YEAR']
+
+    xenergy= ['DailyAverageDryBulbTemperature', 'DailyAverageWindSpeed',
+        'DailyDepartureFromNormalAverageTemperature',
+        'DailyMaximumDryBulbTemperature',
+       'DailyMinimumDryBulbTemperature', 'DailyPeakWindSpeed',
+       'DailyPrecipitation',
+       'DailySustainedWindSpeed',
+       'DailyPeakWindDirection_sin', 'DailyPeakWindDirection_cos',
+       'DailySustainedWindDirection_sin', 'DailySustainedWindDirection_cos',
+       'DailyAverageDewPointTemperature',
+       'DailyAveragePrecipitation', 'DailyAveragePressureChange',
+       'DailyAverageRelativeHumidity', 'DailyAverageSeaLevelPressure',
+       'DailyAverageStationPressure', 'DailyAverageWetBulbTemperature',
+       'DailyAverageWindGustSpeed', 'DailyAverageWindDirection_sin',
+       'DailyAverageWindDirection_cos']
+    
+    yenergy = ['Demand']
+    feenergy = ['CLIMATE_STATION_NAME','MONTH']
 
     # model_1(totaldf, xclimate, y, fe)
-    # model_1_panel(totaldf, xclimate,y,fe)
+    model_1_panel(total, xenergy, y, fe)
+
+    # model_2_aqi(totaldata(), xclimate, yaqi, fe)
+
+    
+
+    #Energy Demand: 
+    # model_3_energy_climate(total, xenergy, yenergy, feenergy)
+
+    #Fossil Fuel Dispatch Output Generation: 
+    yfossil = ['Gross Load (MWh)']
+
+    # model_3_energy_climate(total,xenergy,yfossil, feenergy)
+
+    #PM mean on renewables and capacity controlling for climate with year and station FE:
+    xenergyandrenewables = xenergy + ['Number', 'Capacity']
+    
+    # model_3_energy_climate(total, xenergyandrenewables, y,fe)
+
+    # AQI on renewables and capacity controlling for climate with year and station FE:
+    # model_3_energy_climate(total,xenergyandrenewables,yaqi,fe)
+
+
+
 
    
