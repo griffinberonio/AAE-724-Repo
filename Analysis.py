@@ -9,6 +9,7 @@ import time
 import os
 import airqualityandclimateAPI
 import statsmodels.api as sm
+import numpy as np
 
 from statsmodels.stats.outliers_influence \
      import variance_inflation_factor as VIF
@@ -19,6 +20,19 @@ from ISLP.models import (ModelSpec as MS,
                          summarize,
                          poly)
 from linearmodels.panel import PanelOLS
+
+from statsmodels.api import OLS
+import sklearn.model_selection as skm
+import sklearn.linear_model as skl
+
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import StandardScaler
+from sklearn.pipeline import Pipeline
+from group_lasso import GroupLasso
+
+from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import KFold, cross_val_score
+
 
 ################### Downloading Data ##################################
 #climate data:
@@ -48,9 +62,8 @@ trafficdatapath = '/Users/griffinberonio/Documents/AAE 724/Datasets/DailyTraffic
 totaldatapath = '/Users/griffinberonio/Documents/AAE 724/Datasets/totaldata.csv'
 totaldf = pd.read_csv(totaldatapath)
 
-def totaldata():
-
-    
+#Data used to run the exploratory Panel OLS models from the first stage of the analysis: 
+def firstmodelstotaldata():
     totaldatapath = '/Users/griffinberonio/Documents/AAE 724/Datasets/totaldata.csv'
     totaldf = pd.read_csv(totaldatapath)
     totaldf['DATE'] = pd.to_datetime(totaldf['DATE'])
@@ -59,6 +72,42 @@ def totaldata():
     totaldf['YEAR'] = totaldf['DATE'].dt.year
 
     return totaldf
+
+
+#Cleaned data for the second stage of the analysis: 
+def totaldata(include_demand=False):
+
+    totaldatapath = '/Users/griffinberonio/Documents/AAE 724/Datasets/totaldata.csv'
+    totaldf = pd.read_csv(totaldatapath)
+    totaldf['DATE'] = pd.to_datetime(totaldf['DATE'])
+    totaldf['DailyPrecipitation'] = totaldf['DailyPrecipitation'].replace('T',0)
+    totaldf['DailyPrecipitation'] = totaldf['DailyPrecipitation'].astype(float)
+    totaldf['YEAR'] = totaldf['DATE'].dt.year
+    totaldf['sunrise_sin'] = np.sin(2*np.pi * totaldf['Sunrise']/86400)
+    totaldf['sunrise_cos'] = np.cos(2*np.pi * totaldf['Sunrise']/86400)
+    totaldf['sunset_sin'] = np.sin(2*np.pi * totaldf['Sunset']/86400)
+    totaldf['sunset_cos'] = np.cos(2*np.pi * totaldf['Sunset']/86400)
+    #Lagging variables:
+    problematic_cols = []
+    if include_demand == True:
+        problematic_cols = ['DailyHeatingDegreeDays','DailyCoolingDegreeDays','DailySnowDepth','DailySnowfall','DailyWeather',
+                            'validity_indicator',] #These columns are dropped due to large amounts of missing data 
+    else:
+        problematic_cols = ['DailyHeatingDegreeDays','DailyCoolingDegreeDays','validity_indicator','DailySnowDepth','DailySnowfall','DailyWeather','Demand']
+
+    totaldf = totaldf.drop(columns=problematic_cols)
+    totaldf = totaldf.dropna()
+    lag_1 = totaldf.shift(1).add_suffix('_lag1')
+    lag_2 = totaldf.shift(2).add_suffix('_lag2')
+    lag_3 = totaldf.shift(3).add_suffix('_lag3')
+    finaldropcols = []
+
+
+    df_final = totaldf.join([lag_1,lag_2,lag_3],how='inner')
+    laggedcols = [col for col in df_final.columns if 'lag' in col]
+
+    df_final = df_final.drop_duplicates()
+    return df_final
 
 def cleaning_total_data(df,variables):
     dependent_vars = ['aqi','arithmetic_mean','first_max_value']
@@ -258,10 +307,138 @@ def model_3_energy_climate(data, x, y, fe):
     return results
 
 
+############################################## Lasso ################################################################
+
+def LASSOsetup(data, pm_mean = True):
+    df = data
+    keepnonnumeric = ['CLIMATE_STATION_NAME', #Columns to keep in the df but are nonnumeric
+    'AQ_STATION_NAME']
     
+    # Columns to drop:
+    drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
+           'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
+           'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1']
+    
+    df = df.drop(columns=drops)
+    for col in df.columns:
+        if col not in keepnonnumeric:
+            df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    df['DATE'] = pd.to_numeric(df['DATE'])
+    df = df.dropna()
+
+    if pm_mean == True:
+        y = df['arithmetic_mean'].values
+
+    else:
+        y = df['aqi'].values
+
+    #Dropping y vars:
+    df = df.drop(columns = ['aqi','arithmetic_mean'])
+    df = df.drop(columns='AQ_STATION_NAME')
+
+    #Making dummy variables:
+    
+    climate_dummies = pd.get_dummies(df['CLIMATE_STATION_NAME'])
+    # aq_dummies = pd.get_dummies(df['AQ_STATION_NAME'])
+    year_dummies = pd.get_dummies(df['YEAR'])
+
+    nonstations = df.drop(columns=['CLIMATE_STATION_NAME', 'AQ_STATION_NAME','YEAR'])
+    
+   #Groups for group LASSO:
+    groups = []
+    current_group = 0
+
+    # Group 0 to N: Individual climate variables (each gets its own ID)
+    for var in range(len(nonstations.columns)):
+        groups.append(current_group)
+        current_group += 1
+
+    # Group N+1: All Climate Station dummies share one ID
+    groups.extend([current_group] * climate_dummies.shape[1])
+    current_group += 1
+
+    # Group N+2: All Year dummies share one ID
+    groups.extend([current_group] * year_dummies.shape[1])
+
+    #Group N+3: All Air Quality Stations share one ID:
+    # groups.extend([current_group] * aq_dummies.shape[1])
+    # current_group += 1
+
+    groups = np.array(groups)
 
 
+    x_vars = nonstations.columns 
+    # X = pd.concat([df[x_vars], climate_dummies, aq_dummies, year_dummies], axis=1)
+    X = pd.concat([df[x_vars], climate_dummies, year_dummies], axis=1)
+
+
+    X.columns = X.columns.astype(str)
+
+    continuous_indices = [X.columns.get_loc(c) for c in x_vars]
+    dummy_indices = [X.columns.get_loc(c) for c in X.columns if c not in x_vars]
+
+    print(f"X columns: {X.shape[1]}")
+    print(f"Groups length: {len(groups)}")
+
+    if X.shape[1] != len(groups):
+        print("❌ STILL A MISMATCH!")
+    else:
+        print("✅ MATCHED!")
+
+    #Initialize 5 fold K-fold cross validation algorithm
+    K = 5
+    kfold = skm.KFold(K,
+                  shuffle=True,
+                  random_state=42) 
+
+
+    #Initialize the scaler:
+    scaler = StandardScaler(with_mean=True, with_std=True)
+
+    #Preprocessor separates continuous numerical variables from dummy variables based on indices:
+    preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', scaler, continuous_indices),
+        ('pass', 'passthrough', dummy_indices) 
+    ])     
+
+    # Pipeline:
+    print('Initializing pipeline')
+
+    pipe = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('group_lasso', GroupLasso(
+        groups=groups, 
+        l1_reg=0.05, 
+        group_reg=0.1, 
+        fit_intercept=True,
+        supress_warning=True))
+    ])
+
+    print('Setup complete')
+
+
+    #Fitting the group Lasso:
+    # pipe.fit(X, y)
+
+    param_grid = {
+    'group_lasso__l1_reg': [0.001, 0.01, 0.1, 1.0],
+    'group_lasso__group_reg': [0.01, 0.1, 0.5]
+    }
+
+    grid = GridSearchCV(pipe, param_grid, cv=kfold, scoring='r2')
+
+    # Fitting the gridsearch and cross validation:
+    grid.fit(X, y)
+
+    print(f"Best R2: {grid.best_score_}")
+    print(f"Best Params: {grid.best_params_}")
+
+    # print('Group LASSO pipe fitted')
+
     
+
 
 # Model 4: Fossil fuel generation output (MWh) based on above metrics ^
 # Model 5: Regressing Pm2.5/ aqi on renewables, controlling. for climate metrics 
@@ -306,7 +483,7 @@ if __name__ == '__main__':
     feenergy = ['CLIMATE_STATION_NAME','MONTH']
 
     # model_1(totaldf, xclimate, y, fe)
-    model_1_panel(total, xenergy, y, fe)
+    # model_1_panel(total, xenergy, y, fe)
 
     # model_2_aqi(totaldata(), xclimate, yaqi, fe)
 
@@ -327,8 +504,6 @@ if __name__ == '__main__':
 
     # AQI on renewables and capacity controlling for climate with year and station FE:
     # model_3_energy_climate(total,xenergyandrenewables,yaqi,fe)
-
-
-
+    test = LASSOsetup(total)
 
    
