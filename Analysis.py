@@ -29,7 +29,6 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 from group_lasso import GroupLasso
-
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold, cross_val_score
 
@@ -307,7 +306,9 @@ def model_3_energy_climate(data, x, y, fe):
     return results
 
 
-############################################## Lasso ################################################################
+############################################## Lasso ##############################################################################
+
+######################################################################################################################################
 
 def LASSOsetup(data, pm_mean = True):
     df = data
@@ -317,7 +318,10 @@ def LASSOsetup(data, pm_mean = True):
     # Columns to drop:
     drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
            'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
-           'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1']
+           'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1',
+           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3','AQlatitude_lag1','AQlatitude_lag2',
+           'AQlatitude_lag3','arithmetic_mean_lag1','arithmetic_mean_lag2','arithmetic_mean_lag3','aqi_lag1','aqi_lag2','aqi_lag3']
+    
     
     df = df.drop(columns=drops)
     for col in df.columns:
@@ -335,21 +339,38 @@ def LASSOsetup(data, pm_mean = True):
 
     #Dropping y vars:
     df = df.drop(columns = ['aqi','arithmetic_mean'])
-    df = df.drop(columns='AQ_STATION_NAME')
+    df = df.drop(columns='AQ_STATION_NAME') # Use this when not grouping by AQ_STATION_NAME. 
 
     #Making dummy variables:
-    
+
     climate_dummies = pd.get_dummies(df['CLIMATE_STATION_NAME'])
     # aq_dummies = pd.get_dummies(df['AQ_STATION_NAME'])
     year_dummies = pd.get_dummies(df['YEAR'])
 
-    nonstations = df.drop(columns=['CLIMATE_STATION_NAME', 'AQ_STATION_NAME','YEAR'])
+    # nonstations = df.drop(columns=['CLIMATE_STATION_NAME', 'AQ_STATION_NAME','YEAR'])
+    nonstations = df.drop(columns=['CLIMATE_STATION_NAME','YEAR']) # Use this when not grouping by AQ_STATION_NAME
+
+    # Separating out renewable variables:
+    renewable_cols = []
+    for col in df.columns:
+        if ('Number' in col) | ('Capacity' in col):
+            renewable_cols.append(col)
     
-   #Groups for group LASSO:
+    # Groups for group LASSO:
     groups = []
     current_group = 0
 
     # Group 0 to N: Individual climate variables (each gets its own ID)
+
+    #Syntax for creating a renweables group:
+
+    # for var in range(len(nonstations.columns)):
+    #     if nonstations.columns[var] in renewable_cols:
+    #         groups.append(current_group)
+    #     else:
+    #         groups.append(current_group)
+    #     current_group += 1
+
     for var in range(len(nonstations.columns)):
         groups.append(current_group)
         current_group += 1
@@ -406,6 +427,14 @@ def LASSOsetup(data, pm_mean = True):
     # Pipeline:
     print('Initializing pipeline')
 
+    renewable_indices = [i for i, col in enumerate(nonstations.columns) if col in renewable_cols]
+
+    # Build weight array: 1.0 for all groups, 0.0 for renewable groups
+    n_groups = current_group  
+    group_weights = np.ones(n_groups)
+    for idx in renewable_indices:
+        group_weights[idx] = 0.0  # Makes sure the renewable variables are exempted. 
+
     pipe = Pipeline(steps=[
     ('preprocessor', preprocessor),
     ('group_lasso', GroupLasso(
@@ -418,22 +447,57 @@ def LASSOsetup(data, pm_mean = True):
 
     print('Setup complete')
 
-
-    #Fitting the group Lasso:
-    # pipe.fit(X, y)
-
     param_grid = {
     'group_lasso__l1_reg': [0.001, 0.01, 0.1, 1.0],
     'group_lasso__group_reg': [0.01, 0.1, 0.5]
     }
 
-    grid = GridSearchCV(pipe, param_grid, cv=kfold, scoring='r2')
+    grid = GridSearchCV(pipe, param_grid, cv=kfold, scoring='neg_mean_squared_error')
 
     # Fitting the gridsearch and cross validation:
+    print('Fitting Gridsearch...')
+    start = time.time()
     grid.fit(X, y)
 
-    print(f"Best R2: {grid.best_score_}")
+    cv_rmse = np.sqrt(-grid.best_score_)
+    print(f"Best Cross-Validated RMSE: {cv_rmse:.4f}")
+    # print(f"Best R2: {grid.best_score_}")
     print(f"Best Params: {grid.best_params_}")
+    end = time.time()
+    print(f'Grid search took: {end-start}')
+
+    ########### Getting the CV MSE: ################
+
+    best_neg_mse = grid.best_score_
+    best_mse = -best_neg_mse
+
+    print(f"Best Cross-Validated MSE: {best_mse:.4f}")
+    print(f"Best RMSE (Root MSE): {np.sqrt(best_mse):.4f}")
+
+    ########### Getting the Coefficients ###########
+    best_pipe = grid.best_estimator_
+
+    # Reach into the winner to get the coefficients
+    best_lasso = best_pipe.named_steps['group_lasso']
+    coefs = best_lasso.coef_
+
+    #Getting the corresponding feature names:
+    preprocessor = best_pipe.named_steps['preprocessor']
+    feature_names = preprocessor.get_feature_names_out()
+    feature_names_clean = np.array([name.split('__')[-1] for name in feature_names])
+
+    coef_array = np.array(coefs).flatten()
+
+    nonzero_mask = coef_array != 0
+    nonzero_coefs = coef_array[nonzero_mask]
+    nonzero_features = feature_names_clean[nonzero_mask]
+
+    print(f"Number of non-zero coefficients: {len(nonzero_coefs)}")
+    print("\n{:<40} {:>15}".format("Feature", "Coefficient"))
+    print("-" * 57)
+    for feat, coef in zip(nonzero_features, nonzero_coefs):
+        print("{:<40} {:>15.6f}".format(feat, coef))
+
 
     # print('Group LASSO pipe fitted')
 
@@ -504,6 +568,6 @@ if __name__ == '__main__':
 
     # AQI on renewables and capacity controlling for climate with year and station FE:
     # model_3_energy_climate(total,xenergyandrenewables,yaqi,fe)
-    test = LASSOsetup(total)
+    LASSOsetup(total)
 
    
