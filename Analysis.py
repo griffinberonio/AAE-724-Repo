@@ -539,11 +539,23 @@ def FWLasso(df, pm = True):
     print(f"NaNs in X: {X.isna().sum().sum()}")
 
     #These become the new X and Y:
-    algorithm = pyhdfe.create(df[['CLIMATE_STATION_NAME', 'YEAR']].values)
+    climate_ids = df['CLIMATE_STATION_NAME'].astype('category').cat.codes.values
+    year_ids = df['YEAR'].astype('category').cat.codes.values
+
+
+
+    fe_array = np.column_stack([climate_ids, year_ids])
+
+    algorithm = pyhdfe.create(fe_array)
+    # algorithm = pyhdfe.create(df[['CLIMATE_STATION_NAME', 'YEAR']].values)
+    print('first')
     y_resid = algorithm.residualize(y.values.reshape(-1, 1)).flatten()
+    print(y_resid)
     X_resid = algorithm.residualize(X.values)
+    print(X_resid)
     X_resid = pd.DataFrame(X_resid, columns=X.columns)
 
+    print('Initiating Shuffle Split:')
     validation = skm.ShuffleSplit(n_splits=1,
                               test_size=0.2,
                               random_state=0)
@@ -562,12 +574,14 @@ def FWLasso(df, pm = True):
     pipeCVlasso = Pipeline(steps=[('scaler', scaler),
                          ('lasso', lassoCV2)])
     
+    print('Fitting Hyper Parameter Pipeline:')
     pipeCVlasso.fit(X_train, y_train)
     tuned_lasso = pipeCVlasso.named_steps['lasso']
     lasso_alpha = tuned_lasso.alpha_
     print(f'Tuned alpha = {lasso_alpha}')
 
     # Testing the tuned lasso on the test data: 
+    print('Testing the Tuned Lasso with Cross Validation:')
     lassotest = skl.ElasticNet(alpha=lasso_alpha, l1_ratio=1)
     pipeCVlassotest = Pipeline(steps=[('scaler', scaler), ('lasso', lassotest)])
 
