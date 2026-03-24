@@ -32,6 +32,8 @@ from group_lasso import GroupLasso
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold, cross_val_score
 
+import pyhdfe
+
 
 ################### Downloading Data ##################################
 #climate data:
@@ -499,7 +501,108 @@ def LASSOsetup(data, pm_mean = True):
         print("{:<40} {:>15.6f}".format(feat, coef))
 
 
-    # print('Group LASSO pipe fitted')
+########################################
+# Simplified LASSO: 
+########################################
+
+def FWLasso(df, pm = True):
+    df = df
+    keepnonnumeric = ['CLIMATE_STATION_NAME', #Columns to keep in the df but are nonnumeric
+    'AQ_STATION_NAME']
+    
+    # Columns to drop:
+    drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
+           'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
+           'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1',
+           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3','AQlatitude_lag1','AQlatitude_lag2',
+           'AQlatitude_lag3','arithmetic_mean_lag1','arithmetic_mean_lag2','arithmetic_mean_lag3','aqi_lag1','aqi_lag2','aqi_lag3']
+    
+    df = df.drop(columns=drops)
+    for col in df.columns:
+        if col not in keepnonnumeric:
+            df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    df['DATE'] = pd.to_numeric(df['DATE'])
+    df = df.dropna()
+
+    if pm == True:
+        y = df['arithmetic_mean']
+    else:
+        y = df['aqi']
+
+    # df = df.drop(columns = ['aqi','arithmetic_mean'])
+    # df = df.drop(columns='AQ_STATION_NAME')
+
+    X = df.drop(columns=['aqi', 'arithmetic_mean', 'AQ_STATION_NAME', 'CLIMATE_STATION_NAME', 'YEAR'])
+    X = X.apply(pd.to_numeric, errors='coerce')
+    print(f"Non-numeric columns remaining: {X.dtypes[X.dtypes == 'object'].index.tolist()}")
+    print(f"NaNs in X: {X.isna().sum().sum()}")
+
+    #These become the new X and Y:
+    algorithm = pyhdfe.create(df[['CLIMATE_STATION_NAME', 'YEAR']].values)
+    y_resid = algorithm.residualize(y.values.reshape(-1, 1)).flatten()
+    X_resid = algorithm.residualize(X.values)
+    X_resid = pd.DataFrame(X_resid, columns=X.columns)
+
+    validation = skm.ShuffleSplit(n_splits=1,
+                              test_size=0.2,
+                              random_state=0)
+
+    for train_idx, test_idx in validation.split(X_resid):
+        X_train, X_test = X_resid.iloc[train_idx], X_resid.iloc[test_idx]
+        y_train, y_test = y_resid[train_idx], y_resid[test_idx]
+
+    #Setting up pre-processing and cross validation:
+    K = 5
+    kfold = skm.KFold(K, shuffle=True,random_state=42) 
+    #Initialize the scaler:
+    scaler = StandardScaler(with_mean=True, with_std=True)
+
+    lassoCV2 = skl.ElasticNetCV(n_alphas=100, l1_ratio=0.1, cv=kfold)
+    pipeCVlasso = Pipeline(steps=[('scaler', scaler),
+                         ('lasso', lassoCV2)])
+    
+    pipeCVlasso.fit(X_train, y_train)
+    tuned_lasso = pipeCVlasso.named_steps['lasso']
+    lasso_alpha = tuned_lasso.alpha_
+    print(f'Tuned alpha = {lasso_alpha}')
+
+    # Testing the tuned lasso on the test data: 
+    lassotest = skl.ElasticNet(alpha=lasso_alpha, l1_ratio=1)
+    pipeCVlassotest = Pipeline(steps=[('scaler', scaler), ('lasso', lassotest)])
+
+    resultslasso = skm.cross_validate(pipeCVlassotest, 
+                                X_resid,
+                                y_resid,
+                                cv=kfold,
+                                scoring='neg_mean_squared_error',
+                                return_estimator=True ) #outer cross-validation to evaluate the entire process
+
+    # Average Lasso MSE across all folds:
+    lasso_rmse = np.sqrt(-resultslasso['test_score'].mean())
+    print(f"Mean CV RMSE: {lasso_rmse:.4f}")
+
+    # --- Coefficients across folds ---
+    fold_coefs = []
+    for estimator in resultslasso['estimator']:
+        coef_array = estimator.named_steps['lasso'].coef_
+        fold_coefs.append(dict(zip(X_resid.columns, coef_array)))
+
+    coef_df = pd.DataFrame(fold_coefs)
+    coef_df.index = [f'Fold {i+1}' for i in range(K)]
+
+    nonzero_cols = coef_df.columns[(coef_df != 0).any(axis=0)]
+    print(f"\nNon-zero coefficients: {len(nonzero_cols)}")
+    print("\n--- Mean coefficient across folds (nonzero in at least one fold) ---")
+    print(coef_df[nonzero_cols].mean().sort_values(ascending=False).round(6))
+
+    return resultslasso, coef_df, lasso_rmse
+
+
+
+
+    
+
 
     
 
@@ -568,6 +671,15 @@ if __name__ == '__main__':
 
     # AQI on renewables and capacity controlling for climate with year and station FE:
     # model_3_energy_climate(total,xenergyandrenewables,yaqi,fe)
-    LASSOsetup(total)
+
+    #######################LASSO#########################
+
+    # LASSOsetup(total)
+
+    FWLasso(total)
+
+
+
+
 
    
