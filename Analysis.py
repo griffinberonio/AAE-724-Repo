@@ -27,6 +27,8 @@ import sklearn.linear_model as skl
 
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder
+
 from sklearn.pipeline import Pipeline
 from group_lasso import GroupLasso
 from sklearn.model_selection import GridSearchCV
@@ -612,6 +614,149 @@ def FWLasso(df, pm = True):
 
     return resultslasso, coef_df, lasso_rmse
 
+######################################################## LASSO Using the Frisch-Waugh-Lovell Theorem: ##################################################
+
+def LASSO_pt2(df, pm = True):
+    df = df
+    keepnonnumeric = ['CLIMATE_STATION_NAME', #Columns to keep in the df but are nonnumeric
+    'AQ_STATION_NAME']
+    
+    # Columns to drop:
+    drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
+           'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
+           'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1',
+           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3','AQlatitude_lag1','AQlatitude_lag2',
+           'AQlatitude_lag3','arithmetic_mean_lag1','arithmetic_mean_lag2','arithmetic_mean_lag3','aqi_lag1','aqi_lag2','aqi_lag3']
+    
+    df = df.drop(columns=drops)
+    for col in df.columns:
+        if col not in keepnonnumeric:
+            df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    #Also need to drop our primary X variables to be used later in the OLS regression:
+    xvars = ['Number', 'Capacity']
+    df = df.drop(columns=xvars)
+
+    df['DATE'] = pd.to_numeric(df['DATE'])
+    df = df.dropna()
+
+    if pm == True:
+        y = df['arithmetic_mean']
+    else:
+        y = df['aqi']
+
+    #One hot encoding the qualitative variables:
+    quals = ['CLIMATE_STATION_NAME','YEAR','AQ_STATION_NAME']
+    hot = OneHotEncoder(drop='first')
+    hot_encoded = hot.fit_transform(df[quals])
+    # print(hot_encoded)
+    hot_encoded_df = pd.DataFrame(hot_encoded, columns=hot.get_feature_names_out(quals))
+    df = pd.concat([df.drop(columns=quals), hot_encoded_df], axis=1)
+
+    ### Initiating X and Y train/test: #####
+    X = df.drop(columns=['aqi', 'arithmetic_mean'])
+    X = X.apply(pd.to_numeric, errors='coerce')
+    print(f"Non-numeric columns remaining: {X.dtypes[X.dtypes == 'object'].index.tolist()}")
+    print(f"NaNs in X: {X.isna().sum().sum()}")
+
+    print('Initiating Shuffle Split:')
+    validation = skm.ShuffleSplit(n_splits=1,
+                              test_size=0.2,
+                              random_state=0)
+    
+    for train_idx, test_idx in validation.split(X):
+        X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
+        y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
+
+    #Setting up pre-processing and cross validation:
+    K = 5
+    kfold = skm.KFold(K, shuffle=True,random_state=42) 
+    #Initialize the scaler:
+    scaler = StandardScaler(with_mean=True, with_std=True)
+
+    lassoCV2 = skl.ElasticNetCV(n_alphas=100, l1_ratio=0.1, cv=kfold)
+    pipeCVlasso = Pipeline(steps=[('scaler', scaler),
+                         ('lasso', lassoCV2)])
+    
+    # Fitting for lambda 
+    print('Fitting Hyper Parameter Pipeline:')
+    pipeCVlasso.fit(X_train, y_train)
+    tuned_lasso = pipeCVlasso.named_steps['lasso']
+    lasso_alpha = tuned_lasso.alpha_
+    print(f'Tuned alpha = {lasso_alpha}')
+
+    # Testing the tuned lasso on the test data: 
+    print('Testing the Tuned Lasso with Cross Validation:')
+    lassotest = skl.ElasticNet(alpha=lasso_alpha, l1_ratio=1)
+    pipeCVlassotest = Pipeline(steps=[('scaler', scaler), ('lasso', lassotest)])
+
+    resultslasso = skm.cross_validate(pipeCVlassotest, 
+                                X,
+                                y,
+                                cv=kfold,
+                                scoring='neg_mean_squared_error',
+                                return_estimator=True)
+    
+
+    # Getting Results: 
+    lasso_rmse = np.sqrt(-resultslasso['test_score'].mean())
+    print(f"Mean CV RMSE: {lasso_rmse:.4f}")
+
+    # --- Coefficients across folds ---
+    fold_coefs = []
+    for estimator in resultslasso['estimator']:
+        coef_array = estimator.named_steps['lasso'].coef_
+        fold_coefs.append(dict(zip(X.columns, coef_array)))
+
+    coef_df = pd.DataFrame(fold_coefs)
+    coef_df.index = [f'Fold {i+1}' for i in range(K)]
+
+    nonzero_cols = coef_df.columns[(coef_df != 0).any(axis=0)]
+    print(f"\nNon-zero coefficients: {len(nonzero_cols)}")
+    print("\n--- Mean coefficient across folds (nonzero in at least one fold) ---")
+    print(coef_df[nonzero_cols].mean().sort_values(ascending=False).round(6))
+
+    return resultslasso, coef_df, lasso_rmse
+
+# Panel OLS function with selected variables fomr the LASSO model + renewable variables with climate station and year fixed effects:
+def model_4_lasso_panel(df, x, y, fe):
+    df['DATE'] = pd.to_datetime(df['DATE'])
+    df['MONTH'] = df['DATE'].dt.month
+    df['YEAR'] = df['DATE'].dt.year
+
+    totalcols = x+y+fe
+
+    for col in x + y:
+        df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    df = df[totalcols]
+    model_df = df.dropna()
+
+    print(model_df.head())
+
+    df_panel = model_df.set_index(fe)
+
+    Y = df_panel[y[0]] 
+    X = df_panel[x]
+
+    # Fit the model
+    model = PanelOLS(
+        Y,
+        X,
+        entity_effects=True,
+        time_effects=True
+    )
+
+    results = model.fit(cov_type='clustered', cluster_entity=True)
+    print(results)
+
+    return results
+
+    
+
+    
+    
+    
 
 
 
@@ -621,9 +766,6 @@ def FWLasso(df, pm = True):
     
 
 
-# Model 4: Fossil fuel generation output (MWh) based on above metrics ^
-# Model 5: Regressing Pm2.5/ aqi on renewables, controlling. for climate metrics 
-#Model 6-7: adding all the things together. 
 
 ########################################################################################################
 if __name__ == '__main__':
@@ -690,7 +832,9 @@ if __name__ == '__main__':
 
     # LASSOsetup(total)
 
-    FWLasso(total)
+    # FWLasso(total)
+
+    LASSO_pt2(total)
 
 
 
