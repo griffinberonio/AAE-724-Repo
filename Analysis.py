@@ -28,6 +28,8 @@ import sklearn.linear_model as skl
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.impute import SimpleImputer
+
 from sklearn.compose import make_column_selector as selector
 
 from sklearn.pipeline import Pipeline
@@ -626,7 +628,7 @@ def LASSO_pt2(df, pm = True):
     drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
            'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
            'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1',
-           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3','AQlatitude_lag1','AQlatitude_lag2',
+           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3', 'first_max_hour', 'first_max_hour_lag1','first_max_hour_lag2','first_max_hour_lag3', 'AQlatitude_lag1','AQlatitude_lag2',
            'AQlatitude_lag3','arithmetic_mean_lag1','arithmetic_mean_lag2','arithmetic_mean_lag3','aqi_lag1','aqi_lag2','aqi_lag3']
     
     df = df.drop(columns=drops)
@@ -635,7 +637,7 @@ def LASSO_pt2(df, pm = True):
             df[col] = pd.to_numeric(df[col],errors='coerce')
 
     #Also need to drop our primary X variables to be used later in the OLS regression:
-    xvars = ['Number', 'Capacity']
+    xvars = ['Number', 'Capacity', 'Capacity_lag1', 'Capacity_lag2', 'Capacity_lag3', 'Number_lag1', 'Number_lag2', 'Number_lag3']
     df = df.drop(columns=xvars)
 
     df['DATE'] = pd.to_numeric(df['DATE']) #******Ask about best way to engineer data var for both lasso and RF
@@ -671,11 +673,16 @@ def LASSO_pt2(df, pm = True):
 
     #Preprocessing Steps:
 
+    # Numerical:
+    numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median'))])
+
     # Categorical:
     categorical_transformer = Pipeline(steps=[
     ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False)) ])
 
     preprocessor = ColumnTransformer(transformers=[
+        ('num',numeric_transformer, selector(dtype_include=['int64','float64'])),
         ('cat', categorical_transformer, selector(dtype_include=['object','string']))
     ])
 
@@ -686,7 +693,7 @@ def LASSO_pt2(df, pm = True):
     
     # Fitting for lambda 
     print('Fitting Hyper Parameter Pipeline:')
-    print(X_train)
+    # print(X_train)
 
     pipeCVlasso.fit(X_train, y_train)
     tuned_lasso = pipeCVlasso.named_steps['lasso']
@@ -726,7 +733,14 @@ def LASSO_pt2(df, pm = True):
     print("\n--- Mean coefficient across folds (nonzero in at least one fold) ---")
     print(coef_df[nonzero_cols].mean().sort_values(ascending=False).round(6))
 
-    return resultslasso, coef_df, lasso_rmse
+    # Getting the top 20 most important variables based on absolute value of mean coefficient across folds:
+    nonzerocoefs = coef_df[nonzero_cols].mean().sort_values(ascending=False).round(6)
+
+    #Getting the most important variables based on absolute value of mean coefficient across folds:
+    absvaluecoefs = nonzerocoefs.abs().sort_values(ascending=False)
+    toptwenty = absvaluecoefs.head(20).index.tolist()
+
+    return resultslasso, coef_df, lasso_rmse, nonzerocoefs, toptwenty
 
 
 
@@ -746,7 +760,7 @@ def model_4_lasso_panel(df, x, y, fe):
     df = df[totalcols]
     model_df = df.dropna()
 
-    print(model_df.head())
+    # print(model_df.head())
 
     df_panel = model_df.set_index(fe)
 
@@ -758,7 +772,9 @@ def model_4_lasso_panel(df, x, y, fe):
         Y,
         X,
         entity_effects=True,
-        time_effects=True
+        time_effects=True,
+        check_rank=False,
+        drop_absorbed=True
     )
 
     results = model.fit(cov_type='clustered', cluster_entity=True)
@@ -848,7 +864,9 @@ if __name__ == '__main__':
 
     # FWLasso(total)
 
-    LASSO_pt2(total)
+    lassoresults = LASSO_pt2(total)
+    # print(lassoresults[4])
+
 
 
 

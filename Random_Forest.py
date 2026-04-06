@@ -31,6 +31,8 @@ from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import make_column_selector as selector
+from sklearn.impute import SimpleImputer
+
 
 from sklearn.pipeline import Pipeline
 from group_lasso import GroupLasso
@@ -41,8 +43,8 @@ from sklearn.model_selection import train_test_split
 
 def random_forest(df, pm=True):
     df = df
-    keepnonnumeric = ['CLIMATE_STATION_NAME', #Columns to keep in the df but are nonnumeric
-    'AQ_STATION_NAME']
+    keepnonnumeric = ['CLIMATE_STATION_NAME', 'AQ_STATION_NAME']
+    # keepnonnumeric = ['CLIMATE_STATION_NAME']
     
     # Columns to drop:
     drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
@@ -76,6 +78,9 @@ def random_forest(df, pm=True):
     # print(X.head())
     print(f"Number of NaNs in X: {X.isna().sum().sum()}")
 
+    numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median'))])
+
     categorical_transformer = Pipeline(steps=[
     ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False))
     ])
@@ -83,6 +88,7 @@ def random_forest(df, pm=True):
     # Combine numeric + categorical
     preprocessor = ColumnTransformer(
         transformers=[
+            ('num', numeric_transformer, selector(dtype_include=['int64', 'float64'])),
             ('cat', categorical_transformer, selector(dtype_include=['object','string']))
         ])
     
@@ -96,6 +102,8 @@ def random_forest(df, pm=True):
     ############################
 
     #Grid Search: 
+
+    #Actual Training Params:
     param_grid = {
     'bootstrap': [True],
     'max_depth': [80, 90, 100, 110],
@@ -104,9 +112,19 @@ def random_forest(df, pm=True):
     'min_samples_split': [8, 10, 12],
     'n_estimators': [100, 200, 300, 400]}
 
+    # Debugging training params:
+    param_grid_test = {
+    'bootstrap': [True],
+    'max_depth': [80],
+    'max_features': [2, ],
+    'min_samples_leaf': [2],
+    'min_samples_split': [8],
+    'n_estimators': [100]}
+
     grid_search = Pipeline(steps=[('preprocessing', preprocessor),
                                   ('Grid Search', GridSearchCV(estimator=RandomForestRegressor(random_state=42),
-                                                               param_grid=param_grid,
+                                                               param_grid=param_grid_test, #Using the debugging params
+                                                              # param_grid=param_grid, #Using the actual training params
                                                                cv=kfold,
                                                                scoring = "neg_mean_squared_error"),
                                                                )])
@@ -115,12 +133,13 @@ def random_forest(df, pm=True):
     grid_search.fit(x_train, y_train)
 
     #Retrieving the best hyperparameters:
-    bestestimators = grid_search.best_params_['n_estimators']
-    bestmaxdepth = grid_search.best_params_['max_depth']
-    bestmaxfeatures = grid_search.best_params_['max_features']
-    bestminleaf = grid_search.best_params_['min_samples_leaf']
-    bestminsplit = grid_search.best_params_['min_samples_split']
+    bestestimators = grid_search.named_steps['Grid Search'].best_params_['n_estimators']
+    bestmaxdepth = grid_search.named_steps['Grid Search'].best_params_['max_depth']
+    bestmaxfeatures = grid_search.named_steps['Grid Search'].best_params_['max_features']
+    bestminleaf = grid_search.named_steps['Grid Search'].best_params_['min_samples_leaf']
+    bestminsplit = grid_search.named_steps['Grid Search'].best_params_['min_samples_split']
 
+    print(bestestimators)
 
     #Defining the RF model pipeline:
     rf_pipeline = Pipeline(steps=[
@@ -139,7 +158,7 @@ def random_forest(df, pm=True):
     # Tuning RF hyperparams:
     ############################
     print('Fitting the RF model')
-
+    print(x_train.shape)
     rf_pipeline.fit(x_train, y_train)
 
     n_scores = cross_val_score(rf_pipeline, x_train, y_train,
@@ -163,7 +182,8 @@ def random_forest(df, pm=True):
 
     print(feat_imp.head(40))
 
-
+    print(n_scores)
+    print(prediction)
     return rf_pipeline, n_scores, prediction
 
     
