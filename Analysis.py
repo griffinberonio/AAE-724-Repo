@@ -28,6 +28,7 @@ import sklearn.linear_model as skl
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import StandardScaler
 from sklearn.preprocessing import OneHotEncoder
+from sklearn.compose import make_column_selector as selector
 
 from sklearn.pipeline import Pipeline
 from group_lasso import GroupLasso
@@ -637,7 +638,7 @@ def LASSO_pt2(df, pm = True):
     xvars = ['Number', 'Capacity']
     df = df.drop(columns=xvars)
 
-    df['DATE'] = pd.to_numeric(df['DATE'])
+    df['DATE'] = pd.to_numeric(df['DATE']) #******Ask about best way to engineer data var for both lasso and RF
     df = df.dropna()
 
     if pm == True:
@@ -646,16 +647,10 @@ def LASSO_pt2(df, pm = True):
         y = df['aqi']
 
     #One hot encoding the qualitative variables:
-    quals = ['CLIMATE_STATION_NAME','YEAR','AQ_STATION_NAME']
-    hot = OneHotEncoder(drop='first')
-    hot_encoded = hot.fit_transform(df[quals])
-    # print(hot_encoded)
-    hot_encoded_df = pd.DataFrame(hot_encoded, columns=hot.get_feature_names_out(quals))
-    df = pd.concat([df.drop(columns=quals), hot_encoded_df], axis=1)
 
     ### Initiating X and Y train/test: #####
     X = df.drop(columns=['aqi', 'arithmetic_mean'])
-    X = X.apply(pd.to_numeric, errors='coerce')
+    # X = X.apply(pd.to_numeric, errors='coerce')
     print(f"Non-numeric columns remaining: {X.dtypes[X.dtypes == 'object'].index.tolist()}")
     print(f"NaNs in X: {X.isna().sum().sum()}")
 
@@ -674,12 +669,25 @@ def LASSO_pt2(df, pm = True):
     #Initialize the scaler:
     scaler = StandardScaler(with_mean=True, with_std=True)
 
-    lassoCV2 = skl.ElasticNetCV(n_alphas=100, l1_ratio=0.1, cv=kfold)
-    pipeCVlasso = Pipeline(steps=[('scaler', scaler),
-                         ('lasso', lassoCV2)])
+    #Preprocessing Steps:
+
+    # Categorical:
+    categorical_transformer = Pipeline(steps=[
+    ('onehot', OneHotEncoder(handle_unknown='ignore', sparse_output=False)) ])
+
+    preprocessor = ColumnTransformer(transformers=[
+        ('cat', categorical_transformer, selector(dtype_include=['object','string']))
+    ])
+
+    lassoCV2 = skl.ElasticNetCV(n_alphas=100, l1_ratio=0.1, cv=kfold, random_state=42)
+    pipeCVlasso = Pipeline(steps=[('preprocess', preprocessor),
+                                  ('scaler', scaler),
+                                  ('lasso', lassoCV2 )])
     
     # Fitting for lambda 
     print('Fitting Hyper Parameter Pipeline:')
+    print(X_train)
+
     pipeCVlasso.fit(X_train, y_train)
     tuned_lasso = pipeCVlasso.named_steps['lasso']
     lasso_alpha = tuned_lasso.alpha_
@@ -688,7 +696,9 @@ def LASSO_pt2(df, pm = True):
     # Testing the tuned lasso on the test data: 
     print('Testing the Tuned Lasso with Cross Validation:')
     lassotest = skl.ElasticNet(alpha=lasso_alpha, l1_ratio=1)
-    pipeCVlassotest = Pipeline(steps=[('scaler', scaler), ('lasso', lassotest)])
+    pipeCVlassotest = Pipeline(steps=[('preprocess', preprocessor),
+                                  ('scaler', scaler),
+                                  ('lasso', lassotest)])
 
     resultslasso = skm.cross_validate(pipeCVlassotest, 
                                 X,
@@ -717,6 +727,10 @@ def LASSO_pt2(df, pm = True):
     print(coef_df[nonzero_cols].mean().sort_values(ascending=False).round(6))
 
     return resultslasso, coef_df, lasso_rmse
+
+
+
+
 
 # Panel OLS function with selected variables fomr the LASSO model + renewable variables with climate station and year fixed effects:
 def model_4_lasso_panel(df, x, y, fe):
