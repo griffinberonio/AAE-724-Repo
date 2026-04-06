@@ -37,6 +37,7 @@ from group_lasso import GroupLasso
 from sklearn.ensemble import RandomForestRegressor
 from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold, cross_val_score
+from sklearn.model_selection import train_test_split
 
 def random_forest(df, pm=True):
     df = df
@@ -87,17 +88,83 @@ def random_forest(df, pm=True):
     
     print('Preprocessing setup complete.')
 
+     #Train test split:
+    x_train, x_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=0) 
+
+    ############################
+    # Tuning RF hyperparams:
+    ############################
+
+    #Grid Search: 
+    param_grid = {
+    'bootstrap': [True],
+    'max_depth': [80, 90, 100, 110],
+    'max_features': [2, 3],
+    'min_samples_leaf': [2, 3, 4, 5],
+    'min_samples_split': [8, 10, 12],
+    'n_estimators': [100, 200, 300, 400]}
+
+    grid_search = Pipeline(steps=[('preprocessing', preprocessor),
+                                  ('Grid Search', GridSearchCV(estimator=RandomForestRegressor(random_state=42),
+                                                               param_grid=param_grid,
+                                                               cv=kfold,
+                                                               scoring = "neg_mean_squared_error"),
+                                                               )])
+
+    print('Fitting the Grid Search for RF hyperparameter tuning...')
+    grid_search.fit(x_train, y_train)
+
+    #Retrieving the best hyperparameters:
+    bestestimators = grid_search.best_params_['n_estimators']
+    bestmaxdepth = grid_search.best_params_['max_depth']
+    bestmaxfeatures = grid_search.best_params_['max_features']
+    bestminleaf = grid_search.best_params_['min_samples_leaf']
+    bestminsplit = grid_search.best_params_['min_samples_split']
+
+
     #Defining the RF model pipeline:
     rf_pipeline = Pipeline(steps=[
     ('preprocess', preprocessor),
     ('model', RandomForestRegressor(
-        n_estimators=50,
+        n_estimators=bestestimators,
+        max_depth=bestmaxdepth,
+        max_features=bestmaxfeatures,
+        min_samples_leaf=bestminleaf,
+        min_samples_split=bestminsplit,
         random_state=42,
-        n_jobs=-1
+        n_jobs=-1,
     ))])
 
+    ############################
+    # Tuning RF hyperparams:
+    ############################
     print('Fitting the RF model')
-    
+
+    rf_pipeline.fit(x_train, y_train)
+
+    n_scores = cross_val_score(rf_pipeline, x_train, y_train,
+                           cv=KFold(n_splits=5, shuffle=True, random_state=42)).mean()
+
+    prediction = rf_pipeline.predict(x_test)
+
+    ################### Retreiving feature importances: ###########################:
+
+    feature_names = rf_pipeline.named_steps['preprocess'].get_feature_names_out()
+    rf_model = rf_pipeline.named_steps['model']
+    importances = rf_model.feature_importances_
+
+    feature_names = [f.replace('num__','') for f in feature_names]
+
+    # Combine into a DataFrame:
+    feat_imp = pd.DataFrame({
+        'feature': feature_names,
+        'importance': importances
+    }).sort_values(by='importance', ascending=False)
+
+    print(feat_imp.head(40))
+
+
+    return rf_pipeline, n_scores, prediction
 
     
 
