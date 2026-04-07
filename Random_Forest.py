@@ -41,7 +41,7 @@ from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.model_selection import train_test_split
 
-def random_forest(df, pm=True):
+def random_forest(df, pm = True):
     df = df
     keepnonnumeric = ['CLIMATE_STATION_NAME', 'AQ_STATION_NAME']
     # keepnonnumeric = ['CLIMATE_STATION_NAME']
@@ -162,7 +162,8 @@ def random_forest(df, pm=True):
     rf_pipeline.fit(x_train, y_train)
 
     n_scores = cross_val_score(rf_pipeline, x_train, y_train,
-                           cv=KFold(n_splits=5, shuffle=True, random_state=42)).mean()
+                           cv=KFold(n_splits=5, shuffle=True, random_state=42),
+                           scoring = "neg_mean_squared_error").mean()
 
     prediction = rf_pipeline.predict(x_test)
 
@@ -184,7 +185,8 @@ def random_forest(df, pm=True):
 
     print(n_scores)
     print(prediction)
-    return rf_pipeline, n_scores, prediction
+
+    return rf_pipeline, n_scores, prediction, feat_imp
 
     
 
