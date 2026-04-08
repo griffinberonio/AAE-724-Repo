@@ -47,16 +47,25 @@ def random_forest(df, pm = True):
     # keepnonnumeric = ['CLIMATE_STATION_NAME']
     
     # Columns to drop:
-    drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
+    # drops = ['CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
+    #        'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
+    #        'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1',
+    #        'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3','AQlatitude_lag1','AQlatitude_lag2',
+    #        'AQlatitude_lag3','arithmetic_mean_lag1','arithmetic_mean_lag2','arithmetic_mean_lag3','aqi_lag1','aqi_lag2','aqi_lag3']
+
+    drops = ['CLIMATE_STATION_NAME','AQ_STATION_NAME', 'CLIMATE_STATION_NAME_lag1','AQ_STATION_NAME_lag1','site_address_lag1','CLIMATE_STATION_NAME_lag2',
            'AQ_STATION_NAME_lag2','site_address_lag2','CLIMATE_STATION_NAME_lag3','AQ_STATION_NAME_lag3',
            'site_address_lag3','site_address', 'LATITUDE', 'LONGITUDE', 'SOURCE','LATITUDE_lag1','LONGITUDE_lag1','SOURCE_lag1',
-           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3','AQlatitude_lag1','AQlatitude_lag2',
+           'first_max_value', 'first_max_value_lag1','first_max_value_lag2', 'first_max_value_lag3', 'first_max_hour', 'first_max_hour_lag1','first_max_hour_lag2','first_max_hour_lag3', 'AQlatitude_lag1','AQlatitude_lag2',
            'AQlatitude_lag3','arithmetic_mean_lag1','arithmetic_mean_lag2','arithmetic_mean_lag3','aqi_lag1','aqi_lag2','aqi_lag3']
     
     df = df.drop(columns=drops)
     for col in df.columns:
         if col not in keepnonnumeric:
             df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    xvars = ['Number', 'Capacity', 'Capacity_lag1', 'Capacity_lag2', 'Capacity_lag3', 'Number_lag1', 'Number_lag2', 'Number_lag3']
+    df = df.drop(columns=xvars)
 
     # df['DATE'] = pd.to_numeric(df['DATE']) #****** Ask about best way to engineer data var for both lasso and RF
     df = df.dropna()
