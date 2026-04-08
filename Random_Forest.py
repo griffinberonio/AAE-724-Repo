@@ -121,7 +121,7 @@ def random_forest(df, pm = True):
     'min_samples_split': [8, 10, 12],
     'n_estimators': [100, 200, 300, 400]}
 
-    # Debugging training params:
+    # Less Intensive Grid:
     param_grid_test = {
     'bootstrap': [True],
     'max_depth': [80,90],
@@ -129,6 +129,16 @@ def random_forest(df, pm = True):
     'min_samples_leaf': [2,3],
     'min_samples_split': [8,10],
     'n_estimators': [100,200]}
+
+    # Simple Grid:
+    param_grid_test = {
+    'bootstrap': [True],
+    'max_depth': [80],
+    'max_features': [2],
+    'min_samples_leaf': [2],
+    'min_samples_split': [8],
+    'n_estimators': [100]}
+    
 
     grid_search = Pipeline(steps=[('preprocessing', preprocessor),
                                   ('Grid Search', GridSearchCV(estimator=RandomForestRegressor(random_state=42),
@@ -196,10 +206,6 @@ def random_forest(df, pm = True):
     print(prediction)
 
     return rf_pipeline, n_scores, prediction, feat_imp
-
-    
-
-# Panel OLS using resulting variables:
 
 
 
