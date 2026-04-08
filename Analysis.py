@@ -778,7 +778,7 @@ def model_4_lasso_panel(df, x, y, fe):
     )
 
     results = model.fit(cov_type='clustered', cluster_entity=True)
-    print(results)
+    # print(results)
 
     return results
 
