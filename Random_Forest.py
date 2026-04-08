@@ -124,11 +124,11 @@ def random_forest(df, pm = True):
     # Debugging training params:
     param_grid_test = {
     'bootstrap': [True],
-    'max_depth': [80],
-    'max_features': [2, ],
-    'min_samples_leaf': [2],
-    'min_samples_split': [8],
-    'n_estimators': [100]}
+    'max_depth': [80,90],
+    'max_features': [2, 3],
+    'min_samples_leaf': [2,3],
+    'min_samples_split': [8,10],
+    'n_estimators': [100,200]}
 
     grid_search = Pipeline(steps=[('preprocessing', preprocessor),
                                   ('Grid Search', GridSearchCV(estimator=RandomForestRegressor(random_state=42),
