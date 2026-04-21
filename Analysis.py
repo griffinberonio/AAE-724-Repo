@@ -21,6 +21,8 @@ from ISLP.models import (ModelSpec as MS,
                          poly)
 from linearmodels.panel import PanelOLS
 
+import statsmodels.api as sm
+
 from statsmodels.api import OLS
 import sklearn.model_selection as skm
 import sklearn.linear_model as skl
@@ -783,6 +785,9 @@ def model_4_lasso_panel(df, x, y, fe):
     return results
 
     
+##### PANEL OLS function with LASSO variables and three way fixed effects for station, year, and AQ station: #######
+
+
 
     
     
