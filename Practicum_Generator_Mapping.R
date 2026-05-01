@@ -149,7 +149,9 @@ library(patchwork)
 all_years <- map2019 + map2022 + map2025 + 
   plot_layout(guides = "collect") +  # merges the three legends into one
   plot_annotation(
-    title = "Generators per Census Tract by Year",
+    title = "Solar Generators per Census Tract by Year",
+    caption = "Source: IPA Illinois Shines Block Grant & Solar For All Applications",
+    
     theme = theme(plot.title = element_text(hjust = 0.5, face = "bold", size = 16))
   )
 
@@ -182,7 +184,7 @@ full_map_2019 <- ggplot(gencounts2019) +
     na.value = "grey80",
   ) +
   labs(
-    title = paste("Generators per Census Tract (2019)"),
+    title = paste("Solar Generators per Census Tract (2019)"),
     caption = "Source: IPA Illinois Shines Block Grant Applications"
   ) +
   theme_void() +
@@ -227,7 +229,7 @@ full_map_2022 <- ggplot(gencounts2022) +
     na.value = "grey80"
   ) +
   labs(
-    title = paste("Generators per Census Tract (2022)"),
+    title = paste("Solar Generators per Census Tract (2022)"),
     caption = "Source: IPA Illinois Shines Block Grant & Solar For All Applications"
   ) +
   theme_void() +
@@ -266,7 +268,7 @@ full_map_2025 <- ggplot(gencounts2025) +
     na.value = "grey80"
   ) +
   labs(
-    title = paste("Generators per Census Tract (2025)"),
+    title = paste("Solar Generators per Census Tract (2025)"),
     caption = "Source: IPA Illinois Shines Block Grant & Solar For All Applications"
   ) +
   theme_void() +

@@ -314,6 +314,41 @@ def model_3_energy_climate(data, x, y, fe):
 
     return results
 
+def model_5_oneway_fe(df, x, y, fe):
+    df['DATE'] = pd.to_datetime(df['DATE'])
+    df['MONTH'] = df['DATE'].dt.month
+    df['YEAR'] = df['DATE'].dt.year
+
+    totalcols = x+y+fe
+
+    for col in x + y:
+        df[col] = pd.to_numeric(df[col],errors='coerce')
+
+    df = df[totalcols]
+    model_df = df.dropna()
+
+    # print(model_df.head())
+
+    df_panel = model_df.set_index(fe)
+
+    Y = df_panel[y[0]] 
+    X = df_panel[x]
+
+    # Fit the model
+    model = PanelOLS(
+        Y,
+        X,
+        entity_effects=False,
+        time_effects=True,
+        check_rank=False,
+        drop_absorbed=True
+    )
+
+    results = model.fit(cov_type='clustered', cluster_entity=True)
+    # print(results)
+
+    return results
+
 
 ############################################## Lasso ##############################################################################
 
@@ -785,10 +820,9 @@ def model_4_lasso_panel(df, x, y, fe):
     return results
 
     
-##### PANEL OLS function with LASSO variables and three way fixed effects for station, year, and AQ station: #######
+############################################################################################################
 
-
-
+# Making an adjusted R-squred function for the regression output tables:
     
     
     
